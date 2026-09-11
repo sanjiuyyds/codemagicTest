@@ -1,5 +1,4 @@
 import Foundation
-import UniformTypeIdentifiers
 
 final class LicenseStore: ObservableObject {
     static let shared = LicenseStore()
@@ -14,10 +13,13 @@ final class LicenseStore: ObservableObject {
     private let dateKey = "xstools.license.importedAt"
     private let sizeKey = "xstools.license.filesize"
 
-    private var fileURL: URL {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return dir.appendingPathComponent("license.html")
+    var fileURL: URL {
+        documentsDirectory.appendingPathComponent("license.html")
+    }
+
+    private var documentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
     }
 
     init() {
@@ -44,39 +46,40 @@ final class LicenseStore: ObservableObject {
     }
 
     func importFile(from url: URL) throws {
-        let ext = url.pathExtension.lowercased()
-        if !["html", "htm", "xhtml"].contains(ext) {
-            throw LicensePickerError.notHtml
-        }
-
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
 
-        var coordinateError: NSError?
-        var importError: Error?
-        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinateError) { coordinated in
-            do {
-                let data = try Data(contentsOf: coordinated)
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    try FileManager.default.removeItem(at: fileURL)
-                }
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                importError = error
-            }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        } catch {
+            throw LicensePickerError.unreadable
         }
-        if let coordinateError { throw coordinateError }
-        if let importError { throw importError }
+        if data.isEmpty {
+            throw LicensePickerError.unreadable
+        }
+
+        let ext = url.pathExtension.lowercased()
+        let looksLikeHTML = ["html", "htm", "xhtml"].contains(ext)
+            || String(data: data.prefix(256), encoding: .utf8)?.lowercased().contains("<html") == true
+            || String(data: data.prefix(256), encoding: .utf8)?.lowercased().contains("<!doctype html") == true
+        if !looksLikeHTML {
+            throw LicensePickerError.notHtml
+        }
+
+        try FileManager.default.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+        try data.write(to: fileURL, options: .atomic)
 
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-        defaults.set(url.lastPathComponent, forKey: nameKey)
+        defaults.set(url.lastPathComponent.isEmpty ? "license.html" : url.lastPathComponent, forKey: nameKey)
         defaults.set(Date().timeIntervalSince1970, forKey: dateKey)
-        defaults.set(Int((attrs[.size] as? NSNumber)?.int64Value ?? 0), forKey: sizeKey)
-        DispatchQueue.main.async { [weak self] in
-            self?.reload()
-        }
+        defaults.set(Int((attrs[.size] as? NSNumber)?.int64Value ?? Int64(data.count)), forKey: sizeKey)
+        reload()
     }
 
     func documentURL() -> URL? {

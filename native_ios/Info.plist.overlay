@@ -7,7 +7,7 @@
 	<key>CFBundleName</key>
 	<string>XsTools</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.1.2</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

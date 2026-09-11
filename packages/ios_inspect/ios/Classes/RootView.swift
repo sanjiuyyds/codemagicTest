@@ -255,6 +255,7 @@ struct SectionDetailPage: View {
 
 struct LicensePage: View {
     @ObservedObject var store: LicenseStore
+    @State private var picking = false
     @State private var errorText: String?
 
     var body: some View {
@@ -271,12 +272,12 @@ struct LicensePage: View {
                     LabeledContent("导入时间", value: InfoFormat.date(date))
                 }
             } footer: {
-                Text("导入一次后保存在本机，重装 App 前都可打开。可随时替换。点选 .html / .htm 即可。")
+                Text("导入一次后保存在本机，重装 App 前都可打开。可随时替换。请选择 .html 或 .htm。")
             }
 
             Section {
                 Button(store.hasDocument ? "替换 HTML" : "导入 HTML") {
-                    pickHTML()
+                    picking = true
                 }
                 if store.hasDocument {
                     NavigationLink("打开授权页") {
@@ -299,22 +300,21 @@ struct LicensePage: View {
         }
         .navigationTitle("授权系统")
         .navigationBarTitleDisplayMode(.large)
-    }
-
-    private func pickHTML() {
-        LicensePicker.shared.present { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let url):
-                    do {
-                        try store.importFile(from: url)
-                        errorText = nil
-                    } catch {
-                        errorText = error.localizedDescription
-                    }
-                case .failure(let error):
+        .fileImporter(
+            isPresented: $picking,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    try store.importFile(from: url)
+                    errorText = nil
+                } catch {
                     errorText = error.localizedDescription
                 }
+            case .failure(let error):
+                errorText = error.localizedDescription
             }
         }
     }

@@ -61,7 +61,7 @@ def main() -> None:
         with INFO.open("rb") as fh:
             data = plistlib.load(fh)
         data["CFBundleVersion"] = str(build_id)
-        data["CFBundleShortVersionString"] = "1.1.1"
+        data["CFBundleShortVersionString"] = "1.1.2"
         with INFO.open("wb") as fh:
             plistlib.dump(data, fh, sort_keys=False)
         print(f"set CFBundleVersion={build_id}")
