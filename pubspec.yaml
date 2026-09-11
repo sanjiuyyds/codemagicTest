@@ -1,5 +1,5 @@
 name: ipa_min
-description: Minimal Flutter app for Codemagic IPA smoke test.
+description: Liquid glass inspector for Codemagic IPA builds.
 publish_to: "none"
 version: 1.0.0+1
 
@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  ios_inspect:
+    path: packages/ios_inspect
 
 dev_dependencies:
   flutter_lints: ^5.0.0

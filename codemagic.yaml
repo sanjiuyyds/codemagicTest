@@ -1,15 +1,12 @@
-# Codemagic：用本仓库最小 Flutter 应用打出未签名 IPA。
-# 放到 GitHub 仓库根目录，和 pubspec.yaml、lib/ 同级。
-#
-# Start new build → 分支 main → 工作流 ios-unsigned-ipa
-# 编完下载 unsigned.ipa，再用全能签 + p12 安装。
+# Codemagic：液态工坊未签名 IPA。
+# Start new build → main → iOS unsigned IPA
 # 不要在这里配置 p12。
 
 workflows:
   ios-unsigned-ipa:
     name: iOS unsigned IPA
     instance_type: mac_mini_m2
-    max_build_duration: 45
+    max_build_duration: 60
     environment:
       flutter: stable
       xcode: latest
@@ -19,19 +16,11 @@ workflows:
         - $HOME/.pub-cache
         - $HOME/.cocoapods
     scripts:
-      - name: Ensure iOS platform
+      - name: Prepare iOS project and branding
         script: |
           set -euo pipefail
-          flutter --version
-          if [ ! -f pubspec.yaml ]; then
-            echo "缺少 pubspec.yaml，请把最小应用文件推到仓库根目录"
-            exit 1
-          fi
-          if [ ! -f ios/Runner.xcodeproj/project.pbxproj ]; then
-            echo "仓库没有 ios 工程，由云端补全 iOS 平台文件"
-            flutter create . --project-name ipa_min --org com.sanjiuyyds --platforms=ios
-          fi
-          flutter pub get
+          chmod +x tool/prepare_ios.sh || true
+          bash tool/prepare_ios.sh
 
       - name: Build iOS .app without signing
         script: |

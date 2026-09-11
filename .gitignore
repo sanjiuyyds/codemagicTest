@@ -15,3 +15,5 @@ ios/Flutter/ephemeral/
 *.iml
 .idea/
 .vscode/
+*.pyc
+__pycache__/
