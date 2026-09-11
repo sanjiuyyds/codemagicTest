@@ -9,15 +9,15 @@ enum SigningCollector {
             infoPlistSection(),
             receiptSection(),
             embeddedProfileSection(),
-            codeSignatureSection(),
-            entitlementsSection(),
-            certificateSection(),
+            entitlementsFileSection(),
+            codeDirectorySection(),
             executableSection(),
             trustSection(),
         ]
     }
 
     private static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
+    private static var bundleURL: URL { Bundle.main.bundleURL }
 
     private static func identitySection() -> InfoSection {
         InfoSection("身份", subtitle: "Bundle 标识与版本，用来核对这次装的是哪一包", rows: [
@@ -27,7 +27,6 @@ enum SigningCollector {
             InfoRow("CFBundleIdentifier", string(info["CFBundleIdentifier"])),
             InfoRow("短版本 CFBundleShortVersionString", string(info["CFBundleShortVersionString"])),
             InfoRow("Build CFBundleVersion", string(info["CFBundleVersion"])),
-            InfoRow("包版本对象", Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"),
             InfoRow("可执行文件", string(info["CFBundleExecutable"])),
             InfoRow("包类型", string(info["CFBundlePackageType"])),
             InfoRow("签名标识 CFBundleSignature", string(info["CFBundleSignature"])),
@@ -74,12 +73,15 @@ enum SigningCollector {
 
     private static func embeddedProfileSection() -> InfoSection {
         let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision")
+            ?? bundleURL.appendingPathComponent("embedded.mobileprovision")
         var rows: [InfoRow] = [
-            InfoRow("embedded.mobileprovision", url?.path ?? "不存在"),
+            InfoRow("embedded.mobileprovision", url.path),
         ]
-        guard let url, let data = try? Data(contentsOf: url) else {
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        rows.append(InfoRow("文件存在", InfoFormat.bool(exists)))
+        guard exists, let data = try? Data(contentsOf: url) else {
             rows.append(InfoRow("说明", "未签名 IPA 或被剥离描述文件时这里会空。全能签重签后通常会出现。"))
-            return InfoSection("嵌入描述文件", rows: rows)
+            return InfoSection("嵌入描述文件", subtitle: "Provisioning Profile", rows: rows)
         }
         rows.append(InfoRow("文件大小", InfoFormat.bytes(Int64(data.count))))
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path), let date = attrs[.modificationDate] as? Date {
@@ -87,16 +89,6 @@ enum SigningCollector {
         }
         if let plist = decodeCMSPlist(data) {
             rows.append(contentsOf: profileRows(plist))
-        } else if let text = String(data: data, encoding: .isoLatin1),
-                  let start = text.range(of: "<?xml"),
-                  let end = text.range(of: "</plist>") {
-            let xml = String(text[start.lowerBound...end.upperBound])
-            if let plistData = xml.data(using: .utf8),
-               let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
-                rows.append(contentsOf: profileRows(plist))
-            } else {
-                rows.append(InfoRow("解析", "找到 XML 但反序列化失败"))
-            }
         } else {
             rows.append(InfoRow("解析", "无法从 CMS / XML 中取出 plist"))
         }
@@ -130,6 +122,7 @@ enum SigningCollector {
             InfoRow("com.apple.developer.team-identifier", string(entitlements["com.apple.developer.team-identifier"])),
             InfoRow("get-task-allow", pretty(entitlements["get-task-allow"])),
             InfoRow("aps-environment", string(entitlements["aps-environment"])),
+            InfoRow("beta-reports-active", pretty(entitlements["beta-reports-active"])),
             InfoRow("keychain-access-groups", array(entitlements["keychain-access-groups"])),
             InfoRow("com.apple.security.application-groups", array(entitlements["com.apple.security.application-groups"])),
             InfoRow("完整 Entitlements JSON", InfoFormat.json(entitlements)),
@@ -140,176 +133,86 @@ enum SigningCollector {
         return rows
     }
 
-    private static func codeSignatureSection() -> InfoSection {
+    private static func entitlementsFileSection() -> InfoSection {
+        let names = [
+            "archived-expanded-entitlements.xcent",
+            "embedded.entitlements",
+            "Runner.entitlements",
+        ]
         var rows: [InfoRow] = []
-        let staticInfo = SecStaticCodeCreate()
-        if let staticInfo {
-            rows.append(contentsOf: copySigning(staticInfo, prefix: "静态"))
-        } else {
-            rows.append(InfoRow("SecStaticCode", "创建失败（未签名包常见）"))
-        }
-        if let dynamic = SecCodeCopySelf(), let staticCode = copyStaticCode(dynamic) {
-            rows.append(contentsOf: copySigning(staticCode, prefix: "运行中"))
-        }
-        return InfoSection("代码签名对象", subtitle: "Security.framework", rows: rows)
-    }
-
-    private static func entitlementsSection() -> InfoSection {
-        var rows: [InfoRow] = []
-        if let code = staticCodeForSigning(),
-           let info = SecCopySigningInfo(code) {
-            for (key, value) in info.sorted(by: { $0.key < $1.key }) {
-                let lower = key.lowercased()
-                if lower.contains("entitlement") || lower.contains("identifier") || lower.contains("team") || lower.contains("flag") || lower.contains("format") || lower.contains("platform") {
-                    rows.append(InfoRow(key, pretty(value)))
+        for name in names {
+            let url = bundleURL.appendingPathComponent(name)
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            rows.append(InfoRow(name, exists ? url.path : "不存在"))
+            if exists, let data = try? Data(contentsOf: url) {
+                rows.append(InfoRow("\(name) 大小", InfoFormat.bytes(Int64(data.count))))
+                if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) {
+                    rows.append(InfoRow("\(name) 内容", pretty(plist)))
+                } else if let text = String(data: data, encoding: .utf8) {
+                    rows.append(InfoRow("\(name) 文本", text))
                 }
             }
         }
-        if rows.isEmpty {
-            rows.append(InfoRow("状态", "没有可读的签名 Entitlements。未签名 IPA 会这样；重签后应出现 Team ID 等字段。"))
-        }
-        return InfoSection("签名 Entitlements", rows: rows)
+        return InfoSection("包内 Entitlements 文件", rows: rows)
     }
 
-    private static func certificateSection() -> InfoSection {
-        var rows: [InfoRow] = []
-        if let code = staticCodeForSigning(), let info = SecCopySigningInfo(code) {
-            var certs: [SecCertificate] = []
-            for value in info.values {
-                if let list = value as? [SecCertificate], !list.isEmpty {
-                    certs = list
-                    break
+    private static func codeDirectorySection() -> InfoSection {
+        let codeDir = bundleURL.appendingPathComponent("_CodeSignature")
+        var isDir: ObjCBool = false
+        let hasCode = FileManager.default.fileExists(atPath: codeDir.path, isDirectory: &isDir)
+        var rows: [InfoRow] = [
+            InfoRow("_CodeSignature 目录", hasCode ? codeDir.path : "不存在"),
+        ]
+        if hasCode, let items = try? FileManager.default.contentsOfDirectory(atPath: codeDir.path) {
+            rows.append(InfoRow("内容", items.sorted().joined(separator: ", ")))
+            for item in items.sorted() {
+                let url = codeDir.appendingPathComponent(item)
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path), let size = attrs[.size] as? NSNumber {
+                    rows.append(InfoRow(item, InfoFormat.bytes(size.int64Value)))
                 }
-            }
-            if certs.isEmpty {
-                rows.append(InfoRow("证书链", "签名信息里没有证书数组。键：\(info.keys.sorted().joined(separator: ", "))"))
-            } else {
-                rows.append(InfoRow("证书链长度", "\(certs.count)"))
-                for (idx, cert) in certs.enumerated() {
-                    let data = SecCertificateCopyData(cert) as Data
-                    rows.append(contentsOf: certificateSummary("签名链[\(idx)]", data))
-                    if let summary = SecCertificateCopySubjectSummary(cert) as String? {
-                        rows.append(InfoRow("签名链[\(idx)] Summary", summary))
+                if item == "CodeResources", let data = try? Data(contentsOf: url) {
+                    if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) {
+                        rows.append(InfoRow("CodeResources 摘要", pretty(plist)))
                     }
                 }
             }
         } else {
-            rows.append(InfoRow("证书链", "空。未签名或签名信息不可读。"))
+            rows.append(InfoRow("说明", "未签名 IPA 常见为不存在。全能签重签后应出现 CodeResources。"))
         }
-        return InfoSection("签名证书链", rows: rows)
+        return InfoSection("CodeSignature 目录", rows: rows)
     }
 
     private static func executableSection() -> InfoSection {
         let path = Bundle.main.executablePath ?? ""
         var rows: [InfoRow] = [
-            InfoRow("可执行文件", path),
+            InfoRow("可执行文件", path.isEmpty ? "—" : path),
         ]
-        if !path.isEmpty, let attrs = try? FileManager.default.attributesOfItem(atPath: path) {
+        guard !path.isEmpty else {
+            return InfoSection("可执行文件", rows: rows)
+        }
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path) {
             rows.append(InfoRow("文件大小", (attrs[.size] as? NSNumber).map { InfoFormat.bytes($0.int64Value) } ?? "—"))
             if let date = attrs[.modificationDate] as? Date {
                 rows.append(InfoRow("修改时间", InfoFormat.date(date)))
             }
             rows.append(InfoRow("POSIX 权限", (attrs[.posixPermissions] as? NSNumber).map { String(format: "%o", $0.intValue) } ?? "—"))
         }
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe]) {
-            rows.append(InfoRow("Mach-O 魔数", InfoFormat.hex(data.prefix(16), limit: 16)))
-            rows.append(contentsOf: machoRows(data))
+        if let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) {
+            let header = handle.readData(ofLength: 32)
+            try? handle.close()
+            rows.append(InfoRow("Mach-O 头", InfoFormat.hex(header, limit: 32)))
+            rows.append(contentsOf: machoRows(header))
         }
-        let codeDir = (Bundle.main.bundlePath as NSString).appendingPathComponent("_CodeSignature")
-        var isDir: ObjCBool = false
-        let hasCode = FileManager.default.fileExists(atPath: codeDir, isDirectory: &isDir)
-        rows.append(InfoRow("_CodeSignature 目录", hasCode ? codeDir : "不存在"))
-        if hasCode, let items = try? FileManager.default.contentsOfDirectory(atPath: codeDir) {
-            rows.append(InfoRow("_CodeSignature 内容", items.joined(separator: ", ")))
-            for item in items {
-                let p = (codeDir as NSString).appendingPathComponent(item)
-                if let attrs = try? FileManager.default.attributesOfItem(atPath: p), let size = attrs[.size] as? NSNumber {
-                    rows.append(InfoRow(item, InfoFormat.bytes(size.int64Value)))
-                }
-            }
-        }
-        return InfoSection("可执行文件与 CodeSignature", rows: rows)
+        return InfoSection("可执行文件", rows: rows)
     }
 
     private static func trustSection() -> InfoSection {
-        var rows: [InfoRow] = []
-        if let code = SecStaticCodeCreate() {
-            var requirement: SecRequirement?
-            SecCodeCopyDesignatedRequirement(code, SecCSFlags(), &requirement)
-            if let requirement {
-                var text: CFString?
-                SecRequirementCopyString(requirement, SecCSFlags(), &text)
-                rows.append(InfoRow("Designated Requirement", (text as String?) ?? "—"))
-            }
-            let status = SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), nil as SecRequirement?)
-            rows.append(InfoRow("SecStaticCodeCheckValidity", secStatus(status)))
-        }
-        rows.append(InfoRow("get-task-allow 含义", "为 true 时更像开发证书；企业签 / 分发签通常为 false。"))
-        rows.append(InfoRow("ProvisionsAllDevices 含义", "为 true 时更像企业 In-House；Ad Hoc 会列出 UDID。"))
-        rows.append(InfoRow("重签提示", "全能签安装后，本页应出现 TeamName、证书主题、过期时间。若仍全空，说明系统仍把包视为未签名。"))
-        return InfoSection("校验与判读", rows: rows)
-    }
-
-    // MARK: Security helpers
-
-    private static func SecStaticCodeCreate() -> SecStaticCode? {
-        guard let path = Bundle.main.bundleURL as CFURL? else { return nil }
-        var code: SecStaticCode?
-        let status = SecStaticCodeCreateWithPath(path, SecCSFlags(), &code)
-        return status == errSecSuccess ? code : nil
-    }
-
-    private static func SecCodeCopySelf() -> SecCode? {
-        var code: SecCode?
-        let status = SecCodeCopySelf(SecCSFlags(), &code)
-        return status == errSecSuccess ? code : nil
-    }
-
-    private static func copyStaticCode(_ code: SecCode) -> SecStaticCode? {
-        var staticCode: SecStaticCode?
-        let status = SecCodeCopyStaticCode(code, SecCSFlags(), &staticCode)
-        return status == errSecSuccess ? staticCode : nil
-    }
-
-    private static func staticCodeForSigning() -> SecStaticCode? {
-        SecStaticCodeCreate() ?? SecCodeCopySelf().flatMap(copyStaticCode)
-    }
-
-    private static func SecCopySigningInfo(_ code: SecStaticCode) -> [String: Any]? {
-        var info: CFDictionary?
-        let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
-        let status = SecCodeCopySigningInformation(code, flags, &info)
-        guard status == errSecSuccess, let info else { return nil }
-        return info as? [String: Any]
-    }
-
-    private static func copySigning(_ code: SecStaticCode, prefix: String) -> [InfoRow] {
-        guard let info = SecCopySigningInfo(code) else {
-            return [InfoRow("\(prefix) 签名信息", "不可读")]
-        }
-        var rows: [InfoRow] = []
-        let interesting = [
-            "identifier",
-            "teamid",
-            "format",
-            "flags",
-            "source",
-            "unique",
-            "digest-algorithm",
-            "digest-algorithms",
-            "cdhashes",
-            "time",
-            "timestamp",
-            "platform",
-            "entitlements-dict",
-        ]
-        for (key, value) in info.sorted(by: { $0.key < $1.key }) {
-            if interesting.contains(where: { key.lowercased().contains($0) }) || key.hasPrefix("com.apple") {
-                rows.append(InfoRow("\(prefix) \(key)", pretty(value)))
-            }
-        }
-        rows.append(InfoRow("\(prefix) 全部键", info.keys.sorted().joined(separator: ", ")))
-        return rows
+        InfoSection("校验与判读", rows: [
+            InfoRow("iOS 限制", "应用内不能调用 macOS 的 SecStaticCode / codesign API。本页只读包内文件。"),
+            InfoRow("get-task-allow 含义", "为 true 时更像开发证书；企业签 / 分发签通常为 false。"),
+            InfoRow("ProvisionsAllDevices 含义", "为 true 时更像企业 In-House；Ad Hoc 会列出 UDID。"),
+            InfoRow("重签提示", "全能签安装后，应在「嵌入描述文件」看到 TeamName、证书主题和过期时间。"),
+        ])
     }
 
     private static func certificateSummary(_ prefix: String, _ data: Data) -> [InfoRow] {
@@ -318,33 +221,19 @@ enum SigningCollector {
         }
         var rows: [InfoRow] = [
             InfoRow("\(prefix) 长度", InfoFormat.bytes(Int64(data.count))),
-            InfoRow("\(prefix) Summary", (SecCertificateCopySubjectSummary(cert) as String?) ?? "—"),
         ]
+        if let summary = SecCertificateCopySubjectSummary(cert) as String? {
+            rows.append(InfoRow("\(prefix) Summary", summary))
+        }
         var name: CFString?
-        SecCertificateCopyCommonName(cert, &name)
-        if let name = name as String? { rows.append(InfoRow("\(prefix) CN", name)) }
+        if SecCertificateCopyCommonName(cert, &name) == errSecSuccess, let name = name as String? {
+            rows.append(InfoRow("\(prefix) CN", name))
+        }
         var emails: CFArray?
-        if SecCertificateCopyEmailAddresses(cert, &emails) == errSecSuccess, let emails = emails as? [String] {
+        if SecCertificateCopyEmailAddresses(cert, &emails) == errSecSuccess, let emails = emails as? [String], !emails.isEmpty {
             rows.append(InfoRow("\(prefix) 邮箱", emails.joined(separator: ", ")))
         }
-        if let values = SecCertificateCopyValues(cert, nil, nil) as? [String: Any] {
-            rows.append(InfoRow("\(prefix) OID 数", "\(values.count)"))
-            let interesting = [
-                "2.5.4.10": "组织 O",
-                "2.5.4.11": "部门 OU",
-                "2.5.4.3": "CN",
-                "2.5.29.17": "SAN",
-                "2.5.29.19": "Basic Constraints",
-                "2.5.29.15": "Key Usage",
-                "1.2.840.113635.100.6.1.2": "Apple Developer",
-                "1.2.840.113635.100.6.1.4": "Apple iPhone OS",
-            ]
-            for (oid, label) in interesting {
-                if let entry = values[oid] {
-                    rows.append(InfoRow("\(prefix) \(label)", pretty(entry)))
-                }
-            }
-        }
+        rows.append(InfoRow("\(prefix) DER 开头", InfoFormat.hex(data, limit: 24)))
         return rows
     }
 
@@ -362,6 +251,7 @@ enum SigningCollector {
         default: return [InfoRow("Mach-O", String(format: "未知 magic 0x%08x", magic))]
         }
         func u32(_ offset: Int) -> UInt32 {
+            guard data.count >= offset + 4 else { return 0 }
             let v = data.dropFirst(offset).prefix(4).withUnsafeBytes { $0.load(as: UInt32.self) }
             return swapped ? v.byteSwapped : v
         }
@@ -379,7 +269,7 @@ enum SigningCollector {
         guard let start = data.range(of: Data("<?xml".utf8)),
               let end = data.range(of: Data("</plist>".utf8))
         else { return nil }
-        let xml = data.subdata(in: start.lowerBound..<(end.upperBound))
+        let xml = data.subdata(in: start.lowerBound..<end.upperBound)
         return (try? PropertyListSerialization.propertyList(from: xml, options: [], format: nil)) as? [String: Any]
     }
 
@@ -406,11 +296,5 @@ enum SigningCollector {
     private static func dateValue(_ value: Any?) -> String {
         if let date = value as? Date { return InfoFormat.date(date) }
         return pretty(value)
-    }
-
-    private static func secStatus(_ status: OSStatus) -> String {
-        let msg = SecCopyErrorMessageString(status, nil) as String? ?? ""
-        if status == errSecSuccess { return "通过 (\(status)) \(msg)" }
-        return "失败 \(status) \(msg)"
     }
 }
