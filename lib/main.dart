@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:ios_inspect/ios_inspect.dart';
 
 void main() => runApp(const IpaMinApp());
@@ -8,11 +8,11 @@ class IpaMinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return const CupertinoApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: Color(0xFF070A16),
-        body: SizedBox.expand(child: NativeInspectHost()),
+      home: ColoredBox(
+        color: Color(0x00000000),
+        child: SizedBox.expand(child: NativeInspectHost()),
       ),
     );
   }

@@ -24,7 +24,7 @@ final class InspectPlatformView: NSObject, FlutterPlatformView {
     init(frame: CGRect) {
         let controller = UIHostingController(rootView: RootView())
         controller.view.frame = frame
-        controller.view.backgroundColor = .clear
+        controller.view.backgroundColor = .systemBackground
         controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         self.controller = controller
         super.init()
