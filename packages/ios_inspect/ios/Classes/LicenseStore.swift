@@ -44,19 +44,39 @@ final class LicenseStore: ObservableObject {
     }
 
     func importFile(from url: URL) throws {
+        let ext = url.pathExtension.lowercased()
+        if !["html", "htm", "xhtml"].contains(ext) {
+            throw LicensePickerError.notHtml
+        }
+
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try FileManager.default.removeItem(at: fileURL)
+
+        var coordinateError: NSError?
+        var importError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinateError) { coordinated in
+            do {
+                let data = try Data(contentsOf: coordinated)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+                try data.write(to: fileURL, options: .atomic)
+            } catch {
+                importError = error
+            }
         }
-        try FileManager.default.copyItem(at: url, to: fileURL)
+        if let coordinateError { throw coordinateError }
+        if let importError { throw importError }
+
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         defaults.set(url.lastPathComponent, forKey: nameKey)
         defaults.set(Date().timeIntervalSince1970, forKey: dateKey)
         defaults.set(Int((attrs[.size] as? NSNumber)?.int64Value ?? 0), forKey: sizeKey)
-        reload()
+        DispatchQueue.main.async { [weak self] in
+            self?.reload()
+        }
     }
 
     func documentURL() -> URL? {

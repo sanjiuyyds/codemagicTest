@@ -26,7 +26,7 @@ def merge_plist() -> None:
     data.update(overlay)
     data["CFBundleDisplayName"] = "XsTools"
     data["CFBundleName"] = "XsTools"
-    data["CFBundleShortVersionString"] = "1.1.0"
+    data["CFBundleShortVersionString"] = "1.1.1"
     with INFO.open("wb") as fh:
         plistlib.dump(data, fh, sort_keys=False)
     print(f"updated {INFO}")
