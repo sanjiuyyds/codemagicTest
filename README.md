@@ -1,0 +1,2 @@
+# codemagicTest
+for codemagic
