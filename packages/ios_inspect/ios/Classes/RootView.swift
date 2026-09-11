@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import WebKit
 
-public struct RootView: View {
+struct RootView: View {
     @StateObject private var license = LicenseStore.shared
     @State private var systemSections = SystemCollector.sections()
     @State private var signingSections = SigningCollector.sections()
