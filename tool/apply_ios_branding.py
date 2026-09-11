@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import plistlib
+import re
 import shutil
 from pathlib import Path
 
@@ -36,12 +37,11 @@ def patch_pbxproj() -> None:
     if not pbx.exists():
         return
     text = pbx.read_text(encoding="utf-8")
-    replacements = {
-        "IPHONEOS_DEPLOYMENT_TARGET = 12.0;": "IPHONEOS_DEPLOYMENT_TARGET = 16.0;",
-        "IPHONEOS_DEPLOYMENT_TARGET = 13.0;": "IPHONEOS_DEPLOYMENT_TARGET = 16.0;",
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
+    text = re.sub(
+        r"IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;",
+        "IPHONEOS_DEPLOYMENT_TARGET = 16.0;",
+        text,
+    )
     if "INFOPLIST_KEY_CFBundleDisplayName" not in text:
         text = text.replace(
             "GENERATE_INFOPLIST_FILE = YES;",
@@ -49,6 +49,21 @@ def patch_pbxproj() -> None:
         )
     pbx.write_text(text, encoding="utf-8")
     print(f"patched {pbx}")
+
+
+def patch_podfile() -> None:
+    podfile = IOS / "Podfile"
+    if not podfile.exists():
+        raise SystemExit(f"missing {podfile}")
+    text = podfile.read_text(encoding="utf-8")
+    if re.search(r"^platform :ios,", text, flags=re.M):
+        text = re.sub(r"^platform :ios,.*$", "platform :ios, '16.0'", text, flags=re.M)
+    elif re.search(r"^#\s*platform :ios,", text, flags=re.M):
+        text = re.sub(r"^#\s*platform :ios,.*$", "platform :ios, '16.0'", text, flags=re.M)
+    else:
+        text = "platform :ios, '16.0'\n" + text
+    podfile.write_text(text, encoding="utf-8")
+    print(f"patched {podfile} -> iOS 16.0")
 
 
 def copy_icon() -> None:
@@ -65,6 +80,7 @@ def copy_icon() -> None:
 def main() -> None:
     merge_plist()
     patch_pbxproj()
+    patch_podfile()
     copy_icon()
 
 
