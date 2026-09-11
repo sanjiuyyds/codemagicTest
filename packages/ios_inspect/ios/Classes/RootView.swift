@@ -306,7 +306,11 @@ struct LicensePage: View {
             allowsMultipleSelection: false
         ) { result in
             switch result {
-            case .success(let url):
+            case .success(let urls):
+                guard let url = urls.first else {
+                    errorText = LicensePickerError.empty.localizedDescription
+                    return
+                }
                 do {
                     try store.importFile(from: url)
                     errorText = nil
