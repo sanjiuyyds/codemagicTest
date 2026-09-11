@@ -1,97 +1,101 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+import WebKit
 
-struct RootView: View {
+public struct RootView: View {
+    @StateObject private var license = LicenseStore.shared
     @State private var systemSections = SystemCollector.sections()
     @State private var signingSections = SigningCollector.sections()
-    @State private var taps = 0
 
     var body: some View {
         TabView {
             NavigationStack {
-                AboutPage(taps: $taps, onRefresh: refresh)
+                HomePage(license: license, onRefresh: refresh)
             }
-            .tabItem {
-                Label("关于", systemImage: "info.circle")
-            }
+            .tabItem { Label("主页", systemImage: "square.grid.2x2") }
 
             NavigationStack {
-                DetailPage(
+                MenuPage(
                     title: "系统",
-                    empty: "没有系统信息",
-                    sections: systemSections,
+                    subtitle: "设备、电源、网络与环境",
+                    groups: systemGroups,
                     onRefresh: refresh
                 )
             }
-            .tabItem {
-                Label("系统", systemImage: "iphone")
-            }
+            .tabItem { Label("系统", systemImage: "iphone") }
 
             NavigationStack {
-                DetailPage(
+                MenuPage(
                     title: "签名",
-                    empty: "没有签名信息",
-                    sections: signingSections,
+                    subtitle: "描述文件、证书与包身份",
+                    groups: signingGroups,
                     onRefresh: refresh
                 )
             }
-            .tabItem {
-                Label("签名", systemImage: "checkmark.seal")
+            .tabItem { Label("签名", systemImage: "checkmark.seal") }
+
+            NavigationStack {
+                LicensePage(store: license)
             }
+            .tabItem { Label("授权", systemImage: "doc.richtext") }
         }
         .onAppear(perform: refresh)
     }
 
+    private var systemGroups: [InfoSection] { systemSections }
+    private var signingGroups: [InfoSection] { signingSections }
+
     private func refresh() {
         systemSections = SystemCollector.sections()
         signingSections = SigningCollector.sections()
+        license.reload()
     }
 }
 
-struct AboutPage: View {
-    @Binding var taps: Int
+struct HomePage: View {
+    @ObservedObject var license: LicenseStore
     var onRefresh: () -> Void
 
     var body: some View {
         List {
             Section {
-                LabeledContent("显示名", value: displayName)
-                LabeledContent("版本", value: version)
-                LabeledContent("Build", value: BuildStamp.buildNumber)
-                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "—")
-            } header: {
-                Text("这次构建")
-            }
-
-            Section {
-                LabeledContent("Commit", value: BuildStamp.gitCommit)
-                LabeledContent("分支", value: BuildStamp.branch)
-                LabeledContent("构建时间", value: BuildStamp.builtAt)
-                LabeledContent("工作流", value: BuildStamp.workflow)
-                LabeledContent("实例", value: BuildStamp.instance)
-                LabeledContent("Xcode", value: BuildStamp.xcode)
-            } header: {
-                Text("云编译")
-            }
-
-            Section {
-                LabeledContent("系统", value: UIDevice.current.systemName + " " + UIDevice.current.systemVersion)
-                LabeledContent("机型", value: UIDevice.current.model)
-                LabeledContent("uts.machine", value: machine())
-                LabeledContent("系统外观", value: "使用 iOS 标准导航栏、标签栏和列表")
-            } header: {
-                Text("设备")
-            }
-
-            Section {
-                Stepper(value: $taps, in: 0...9_999) {
-                    LabeledContent("点击计数", value: "\(taps)")
+                NavigationLink {
+                    AboutDetailPage()
+                } label: {
+                    menuLabel("关于 XsTools", "作者、版本与构建信息", "person.crop.square")
                 }
+                NavigationLink {
+                    MenuPage(title: "系统", subtitle: nil, groups: SystemCollector.sections(), onRefresh: onRefresh)
+                } label: {
+                    menuLabel("系统信息", "\(SystemCollector.sections().count) 组", "iphone")
+                }
+                NavigationLink {
+                    MenuPage(title: "签名", subtitle: nil, groups: SigningCollector.sections(), onRefresh: onRefresh)
+                } label: {
+                    menuLabel("签名信息", "\(SigningCollector.sections().count) 组", "checkmark.seal")
+                }
+                NavigationLink {
+                    LicensePage(store: license)
+                } label: {
+                    menuLabel("授权系统", license.hasDocument ? (license.fileName ?? "已保存") : "未导入", "doc.richtext")
+                }
+            } header: {
+                Text("功能")
+            }
+
+            Section {
+                LabeledContent("软件", value: Brand.appName)
+                LabeledContent("作者", value: Brand.author)
+                LabeledContent("版本", value: Brand.version)
+                LabeledContent("Build", value: BuildStamp.buildNumber)
+            } header: {
+                Text("制作")
             } footer: {
-                Text("签名证书不要放进云端。本页只读本机与包内信息。")
+                Text("\(Brand.appName) by \(Brand.author)")
             }
         }
-        .navigationTitle(displayName)
+        .navigationTitle(Brand.appName)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -102,115 +106,253 @@ struct AboutPage: View {
         }
     }
 
-    private var displayName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "液态工坊"
-    }
-
-    private var version: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
-        return "\(short) (\(build))"
-    }
-
-    private func machine() -> String {
-        var n = utsname()
-        uname(&n)
-        return withUnsafePointer(to: &n.machine) {
-            $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
+    private func menuLabel(_ title: String, _ subtitle: String, _ icon: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: icon)
         }
     }
 }
 
-struct DetailPage: View {
-    let title: String
-    let empty: String
-    let sections: [InfoSection]
-    var onRefresh: () -> Void
+struct AboutDetailPage: View {
+    var body: some View {
+        List {
+            Section("软件") {
+                LabeledContent("名称", value: Brand.appName)
+                LabeledContent("作者", value: Brand.author)
+                LabeledContent("版本", value: Brand.version)
+                LabeledContent("Build", value: BuildStamp.buildNumber)
+                LabeledContent("显示名", value: displayName)
+                LabeledContent("Bundle ID", value: Bundle.main.bundleIdentifier ?? "—")
+            }
+            Section("构建") {
+                LabeledContent("Commit", value: BuildStamp.gitCommit)
+                LabeledContent("短哈希", value: BuildStamp.gitCommitShort)
+                LabeledContent("分支", value: BuildStamp.branch)
+                LabeledContent("时间", value: BuildStamp.builtAt)
+                LabeledContent("工作流", value: BuildStamp.workflow)
+                LabeledContent("实例", value: BuildStamp.instance)
+                LabeledContent("仓库", value: BuildStamp.repo)
+            }
+            Section("本机") {
+                LabeledContent("系统", value: UIDevice.current.systemName + " " + UIDevice.current.systemVersion)
+                LabeledContent("机型", value: UIDevice.current.model)
+            }
+            Section {
+                Text("本软件由 \(Brand.author) 制作。")
+            }
+        }
+        .navigationTitle("关于")
+        .navigationBarTitleDisplayMode(.inline)
+    }
 
-    @State private var query = ""
-    @State private var copied = false
+    private var displayName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? Brand.appName
+    }
+}
+
+struct MenuPage: View {
+    let title: String
+    let subtitle: String?
+    let groups: [InfoSection]
+    var onRefresh: () -> Void
 
     var body: some View {
         List {
-            if filtered.isEmpty {
-                Text(empty)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(filtered) { section in
-                    Section {
-                        ForEach(section.rows) { row in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(row.title)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Text(row.value)
-                                    .font(.body)
-                                    .textSelection(.enabled)
-                                if let footnote = row.footnote {
-                                    Text(footnote)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                            .contextMenu {
-                                Button("拷贝") {
-                                    UIPasteboard.general.string = "\(row.title): \(row.value)"
-                                }
-                            }
-                        }
-                    } header: {
-                        Text(section.title)
-                    } footer: {
-                        if let subtitle = section.subtitle {
-                            Text(subtitle)
-                        }
+            if let subtitle, !subtitle.isEmpty {
+                Section { Text(subtitle).foregroundStyle(.secondary) }
+            }
+            Section("分组") {
+                ForEach(groups) { group in
+                    NavigationLink {
+                        SectionDetailPage(section: group)
+                    } label: {
+                        LabeledContent(group.title, value: "\(group.rows.count) 项")
                     }
                 }
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "搜索\(title)字段")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: onRefresh) {
                     Image(systemName: "arrow.clockwise")
                 }
             }
+        }
+    }
+}
+
+struct SectionDetailPage: View {
+    let section: InfoSection
+    @State private var query = ""
+
+    var body: some View {
+        List {
+            if filtered.isEmpty {
+                Text("没有匹配项")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(filtered) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.title)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(row.value)
+                            .font(.body)
+                            .textSelection(.enabled)
+                        if let footnote = row.footnote {
+                            Text(footnote)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .contextMenu {
+                        Button("拷贝") {
+                            UIPasteboard.general.string = "\(row.title): \(row.value)"
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(section.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "搜索")
+        .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(copied ? "已拷贝" : "拷贝全部") {
+                Button("拷贝全部") {
                     UIPasteboard.general.string = dumpText()
-                    copied = true
                 }
             }
         }
     }
 
-    private var filtered: [InfoSection] {
+    private var filtered: [InfoRow] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return sections }
-        return sections.compactMap { section in
-            if section.title.lowercased().contains(q) { return section }
-            let rows = section.rows.filter {
-                $0.title.lowercased().contains(q) || $0.value.lowercased().contains(q)
-            }
-            guard !rows.isEmpty else { return nil }
-            return InfoSection(section.title, subtitle: section.subtitle, rows: rows)
+        guard !q.isEmpty else { return section.rows }
+        return section.rows.filter {
+            $0.title.lowercased().contains(q) || $0.value.lowercased().contains(q)
         }
     }
 
     private func dumpText() -> String {
-        var lines: [String] = ["# \(title)", ""]
-        for section in sections {
-            lines.append("## \(section.title)")
-            for row in section.rows {
-                lines.append("- \(row.title): \(row.value)")
-            }
-            lines.append("")
+        var lines = ["# \(section.title)", ""]
+        for row in section.rows {
+            lines.append("- \(row.title): \(row.value)")
         }
         return lines.joined(separator: "\n")
     }
+}
+
+struct LicensePage: View {
+    @ObservedObject var store: LicenseStore
+    @State private var picking = false
+    @State private var errorText: String?
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("状态", value: store.hasDocument ? "已保存" : "未导入")
+                if let name = store.fileName {
+                    LabeledContent("文件", value: name)
+                }
+                if let size = store.fileSize {
+                    LabeledContent("大小", value: InfoFormat.bytes(size))
+                }
+                if let date = store.importedAt {
+                    LabeledContent("导入时间", value: InfoFormat.date(date))
+                }
+            } footer: {
+                Text("导入一次后保存在本机，重装 App 前都可打开。可随时替换。")
+            }
+
+            Section {
+                Button(store.hasDocument ? "替换 HTML" : "导入 HTML") {
+                    picking = true
+                }
+                if store.hasDocument {
+                    NavigationLink("打开授权页") {
+                        LicenseWebPage(url: store.documentURL())
+                    }
+                    Button("清除本地文件", role: .destructive) {
+                        do { try store.clear() } catch {
+                            errorText = error.localizedDescription
+                        }
+                    }
+                }
+            }
+
+            if let errorText {
+                Section { Text(errorText).foregroundStyle(.red) }
+            }
+        }
+        .navigationTitle("授权系统")
+        .navigationBarTitleDisplayMode(.large)
+        .fileImporter(
+            isPresented: $picking,
+            allowedContentTypes: [
+                .html,
+                .plainText,
+                UTType(filenameExtension: "htm") ?? .html,
+                UTType(filenameExtension: "xhtml") ?? .html,
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    try store.importFile(from: url)
+                    errorText = nil
+                } catch {
+                    errorText = error.localizedDescription
+                }
+            case .failure(let error):
+                errorText = error.localizedDescription
+            }
+        }
+    }
+}
+
+struct LicenseWebPage: View {
+    let url: URL?
+
+    var body: some View {
+        Group {
+            if let url {
+                LicenseWebView(url: url)
+                    .ignoresSafeArea(edges: .bottom)
+            } else {
+                Text("还没有保存的 HTML")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("授权页")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct LicenseWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.allowsBackForwardNavigationGestures = true
+        view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        return view
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }

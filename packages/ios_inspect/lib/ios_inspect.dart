@@ -14,12 +14,9 @@ class NativeInspectHost extends StatelessWidget {
   Widget build(BuildContext context) {
     if (defaultTargetPlatform != TargetPlatform.iOS) {
       return const ColoredBox(
-        color: Color(0xFF070A16),
+        color: Color(0xFFF2F2F7),
         child: Center(
-          child: Text(
-            '仅支持 iPhone',
-            style: TextStyle(color: Color(0xFFE5E7EB), fontSize: 17),
-          ),
+          child: Text('仅支持 iPhone'),
         ),
       );
     }

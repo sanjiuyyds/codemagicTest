@@ -10,10 +10,7 @@ class IpaMinApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const CupertinoApp(
       debugShowCheckedModeBanner: false,
-      home: ColoredBox(
-        color: Color(0x00000000),
-        child: SizedBox.expand(child: NativeInspectHost()),
-      ),
+      home: NativeInspectHost(),
     );
   }
 }

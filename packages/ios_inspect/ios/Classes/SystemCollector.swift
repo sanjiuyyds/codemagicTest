@@ -18,6 +18,8 @@ enum SystemCollector {
             localeTimeSection(),
             networkSection(),
             accessibilitySection(),
+            appBundleSection(),
+            fontsLocaleExtraSection(),
             environmentSection(),
         ]
     }
@@ -52,6 +54,8 @@ enum SystemCollector {
             InfoRow("hw.targettype", sysctlString("hw.targettype")),
             InfoRow("硬件机型名", marketingName(for: uts.machine)),
             InfoRow("标识符供参考", identifierNote()),
+            InfoRow("多任务支持", InfoFormat.bool(d.isMultitaskingSupported)),
+            InfoRow("电池电量采集", "见「电源与散热」分组"),
         ])
     }
 
@@ -300,6 +304,41 @@ enum SystemCollector {
             InfoRow("反转颜色", InfoFormat.bool(UIAccessibility.isInvertColorsEnabled)),
             InfoRow("灰度", InfoFormat.bool(UIAccessibility.isGrayscaleEnabled)),
             InfoRow("屏幕朗读", InfoFormat.bool(UIAccessibility.isSpeakScreenEnabled)),
+            InfoRow("朗读所选内容", InfoFormat.bool(UIAccessibility.isSpeakSelectionEnabled)),
+            InfoRow("视频自动播放", InfoFormat.bool(UIAccessibility.isVideoAutoplayEnabled)),
+            InfoRow("开关标签", InfoFormat.bool(UIAccessibility.isOnOffSwitchLabelsEnabled)),
+            InfoRow("摇一摇撤销", InfoFormat.bool(UIAccessibility.isShakeToUndoEnabled)),
+            InfoRow("更粗体字重", InfoFormat.bool(UITraitCollection.current.legibilityWeight == .bold)),
+            InfoRow("动态字体档", UIApplication.shared.preferredContentSizeCategory.rawValue),
+        ])
+    }
+
+    private static func appBundleSection() -> InfoSection {
+        let bundle = Bundle.main
+        let fm = FileManager.default
+        var rows: [InfoRow] = [
+            InfoRow("包路径", bundle.bundlePath),
+            InfoRow("资源路径", bundle.resourcePath ?? "—"),
+            InfoRow("Private Frameworks", bundle.privateFrameworksPath ?? "—"),
+            InfoRow("插件路径", bundle.builtInPlugInsPath ?? "—"),
+        ]
+        if let items = try? fm.contentsOfDirectory(atPath: bundle.bundlePath) {
+            rows.append(InfoRow("包内文件数", "\(items.count)"))
+            rows.append(InfoRow("包内条目", items.sorted().joined(separator: ", ")))
+        }
+        return InfoSection("应用包", subtitle: "当前 App 沙盒与包内容", rows: rows)
+    }
+
+    private static func fontsLocaleExtraSection() -> InfoSection {
+        let preferred = Locale.preferredLanguages
+        return InfoSection("语言与字体", rows: [
+            InfoRow("首选语言数", "\(preferred.count)"),
+            InfoRow("首选语言", preferred.joined(separator: ", ")),
+            InfoRow("当前 Locale", Locale.current.identifier),
+            InfoRow("货币代码", Locale.current.currency?.identifier ?? "—"),
+            InfoRow("小数分隔", Locale.current.decimalSeparator ?? "—"),
+            InfoRow("分组分隔", Locale.current.groupingSeparator ?? "—"),
+            InfoRow("Family 字体数", "\(UIFont.familyNames.count)"),
         ])
     }
 

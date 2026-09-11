@@ -3,14 +3,18 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>液态工坊</string>
+	<string>XsTools</string>
 	<key>CFBundleName</key>
-	<string>液态工坊</string>
+	<string>XsTools</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.0</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UISupportsDocumentBrowser</key>
 	<false/>
 </dict>
 </plist>

@@ -21,6 +21,9 @@ enum SigningCollector {
 
     private static func identitySection() -> InfoSection {
         InfoSection("身份", subtitle: "Bundle 标识与版本，用来核对这次装的是哪一包", rows: [
+            InfoRow("软件名", Brand.appName),
+            InfoRow("作者", Brand.author),
+            InfoRow("版本", Brand.version),
             InfoRow("显示名", Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "—"),
             InfoRow("CFBundleName", string(info["CFBundleName"])),
             InfoRow("Bundle Identifier", Bundle.main.bundleIdentifier ?? "—"),

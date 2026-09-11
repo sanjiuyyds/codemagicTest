@@ -13,5 +13,5 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'
   s.resource_bundles = { 'ios_inspect_privacy' => ['PrivacyInfo.xcprivacy'] }
-  s.frameworks = 'UIKit', 'SwiftUI', 'Security', 'Metal'
+  s.frameworks = 'UIKit', 'SwiftUI', 'Security', 'Metal', 'WebKit'
 end

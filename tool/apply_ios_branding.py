@@ -24,9 +24,9 @@ def merge_plist() -> None:
         with OVERLAY.open("rb") as fh:
             overlay = plistlib.load(fh)
     data.update(overlay)
-    data["CFBundleDisplayName"] = "液态工坊"
-    data["CFBundleName"] = "液态工坊"
-    data["CFBundleShortVersionString"] = "1.0.0"
+    data["CFBundleDisplayName"] = "XsTools"
+    data["CFBundleName"] = "XsTools"
+    data["CFBundleShortVersionString"] = "1.1.0"
     with INFO.open("wb") as fh:
         plistlib.dump(data, fh, sort_keys=False)
     print(f"updated {INFO}")
@@ -45,7 +45,7 @@ def patch_pbxproj() -> None:
     if "INFOPLIST_KEY_CFBundleDisplayName" not in text:
         text = text.replace(
             "GENERATE_INFOPLIST_FILE = YES;",
-            'GENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_KEY_CFBundleDisplayName = "液态工坊";',
+            'GENERATE_INFOPLIST_FILE = YES;\n\t\t\t\tINFOPLIST_KEY_CFBundleDisplayName = "XsTools";',
         )
     pbx.write_text(text, encoding="utf-8")
     print(f"patched {pbx}")
