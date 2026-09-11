@@ -7,40 +7,29 @@ final class LicensePicker: NSObject, UIDocumentPickerDelegate {
     private var onPicked: ((Result<URL, Error>) -> Void)?
     private var picker: UIDocumentPickerViewController?
 
-    func present(from view: UIView? = nil, completion: @escaping (Result<URL, Error>) -> Void) {
+    func present(completion: @escaping (Result<URL, Error>) -> Void) {
         onPicked = completion
-        let types: [UTType] = [
-            .item,
-            .data,
-            .content,
-            .html,
-            .plainText,
-            .text,
-            UTType(filenameExtension: "html") ?? .html,
-            UTType(filenameExtension: "htm") ?? .html,
-        ]
+        let types: [UTType] = [.item]
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
         picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
         self.picker = picker
-        guard let host = topController(from: view) else {
-            completion(.failure(LicensePickerError.noPresenter))
-            return
+
+        DispatchQueue.main.async {
+            guard let host = self.rootPresenter() else {
+                completion(.failure(LicensePickerError.noPresenter))
+                self.onPicked = nil
+                self.picker = nil
+                return
+            }
+            host.present(picker, animated: true)
         }
-        host.present(picker, animated: true)
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        controller.dismiss(animated: true)
-        picker = nil
-        guard let url = urls.first else {
-            onPicked?(.failure(LicensePickerError.empty))
-            onPicked = nil
-            return
-        }
-        onPicked?(.success(url))
-        onPicked = nil
+        finish(urls.first)
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
@@ -49,31 +38,30 @@ final class LicensePicker: NSObject, UIDocumentPickerDelegate {
         onPicked = nil
     }
 
-    private func topController(from view: UIView?) -> UIViewController? {
-        if let from = view?.window?.rootViewController {
-            return topMost(from)
+    private func finish(_ url: URL?) {
+        picker?.dismiss(animated: true)
+        picker = nil
+        guard let url else {
+            onPicked?(.failure(LicensePickerError.empty))
+            onPicked = nil
+            return
         }
+        onPicked?(.success(url))
+        onPicked = nil
+    }
+
+    private func rootPresenter() -> UIViewController? {
         let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
+            .first(where: { $0.isKeyWindow && !$0.isHidden })
             ?? UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap(\.windows)
-                .first
-        guard let root = window?.rootViewController else { return nil }
-        return topMost(root)
-    }
-
-    private func topMost(_ controller: UIViewController) -> UIViewController {
-        if let presented = controller.presentedViewController {
-            return topMost(presented)
-        }
-        if let nav = controller as? UINavigationController, let visible = nav.visibleViewController {
-            return topMost(visible)
-        }
-        if let tab = controller as? UITabBarController, let selected = tab.selectedViewController {
-            return topMost(selected)
+                .first(where: { !$0.isHidden })
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
         }
         return controller
     }
